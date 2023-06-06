@@ -46,6 +46,21 @@ namespace examples
                                 }
                             }
                             break;
+                        case KnownOids.ecPublicKey:
+                            byte tag0 = attributeTypeAndValue.Value[0];
+                            int len0 = attributeTypeAndValue.Value[1];
+                            switch (tag0)
+                            {
+                                case UNIVERSAL_TAG_PRINTABLESTRING:
+                                case UNIVERSAL_TAG_UTF8STRING:
+                                    string content = System.Text.ASCIIEncoding.UTF8.GetString(attributeTypeAndValue.Value, 2, len0);
+                                    if (dic.ContainsKey(knownOid.ToString()) == false)
+                                    {
+                                        dic.Add(knownOid.ToString(), content);
+                                    }
+                                    break;
+                            }
+                            break;
                     }
                     
 
@@ -142,6 +157,29 @@ namespace examples
                 }
             }
             
-        }        
+        }
+
+        public static void Encode(byte[] data)
+        {
+            using (FileStream fs = File.Open("cert.cer", FileMode.OpenOrCreate))
+            {
+                fs.Write(data, 0, data.Length);
+                fs.Flush();
+                fs.Close();
+            }
+        }
+
+        public static void Decode(byte[] cert)
+        {
+            ePassport.Certificate certificate = Utils.DerDecode<ePassport.Certificate>(cert);
+
+            Dictionary<string, string> dic_KnownCert = GetSomeHumanReadableInfo(certificate);
+
+            foreach (string key in dic_KnownCert.Keys)
+            {
+                Console.WriteLine("\t" + key + " = " + dic_KnownCert[key]);
+            }
+
+        }
     }
 }

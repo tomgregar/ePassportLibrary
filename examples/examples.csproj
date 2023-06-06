@@ -41,6 +41,12 @@
     <None Update="bsi2008\EF_SOD.bin">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Update="icaopkd-002-ml-000228-1.ldif">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="ICAO_ml_March2023.ml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Update="isrg-root-x1-cross-signed.der">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

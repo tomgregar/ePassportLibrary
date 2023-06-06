@@ -1,4 +1,6 @@
-﻿
+﻿using System.Collections.Generic;
+using System.Linq;
+
 namespace examples
 {
     
@@ -15,13 +17,13 @@ namespace examples
 
             // example of parsing of the ICAO masterlist
             // see https://www.icao.int/Security/FAL/PKD/Pages/icao-master-list.aspx to obtain the file
-            ICAOMasterListExample.Parse(null);
+            List<ePassport.SubjectPublicKeyInfo> certs = ICAOMasterListExample.Parse("ICAO_ml_March2023.ml").ToList();
 
             // Parsing example of an ePassport EF.COM (Common data elements) 
             EFComExample.Parse(@"bsi2008\EF_COM.bin");
 
             // Parsing example of an ePassport EF.SOD (Document Security Object) 
-            EFSodExample.Parse(@"bsi2008\EF_SOD.bin");
+            EFSodExample.Parse(@"bsi2008\EF_SOD.bin", certs);
 
             // Parsing example of an ePassport Datagroup1 (mrz) 
             MrzDatagroupExample.Parse(@"bsi2008\Datagroup1.bin");

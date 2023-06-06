@@ -24,6 +24,7 @@ namespace ePassport
             switch (algorithmOidEnum)
             {
                 case KnownOids.sha1:
+                case KnownOids.ecdsa_with_sha1:
                     return (160 / 8);
 
                 case KnownOids.sha256:
@@ -33,7 +34,8 @@ namespace ePassport
                     return (384 / 8);                    
 
                 case KnownOids.sha512:
-                    return (512 / 8);
+                    return (512 / 8);                
+
 
                 default:
                     throw new NotImplementedException("hash algorithm : " + algorithmOidEnum + "(" + algorithmOid + ") not yet implemented");
@@ -49,6 +51,7 @@ namespace ePassport
             switch (algorithmOidEnum)
             {
                 case KnownOids.sha1:
+                case KnownOids.ecdsa_with_sha1:
                     return new Sha1Digest();
 
                 case KnownOids.sha256:
@@ -59,6 +62,7 @@ namespace ePassport
 
                 case KnownOids.sha512:
                     return new Sha512Digest();
+
 
                 default:
                     throw new NotImplementedException("hash algorithm : " + algorithmOidEnum + "(" + algorithmOid + ") not yet implemented");
@@ -72,6 +76,7 @@ namespace ePassport
             switch (algorithmOidEnum)
             {
                 case KnownOids.sha1:
+                case KnownOids.ecdsa_with_sha1:
                     return SHA1.Create();                    
 
                 case KnownOids.sha256:
@@ -237,7 +242,7 @@ namespace ePassport
                         break;
                 }
 
-                BigInteger certificateSerialNumber = signerInfo.Sid.IssuerAndSerialNumber.SerialNumber.Value;
+                BigInteger certificateSerialNumber = signerInfo.Sid.IssuerAndSerialNumber?.SerialNumber.Value ?? 0;
 
                 // if SignedAttrs is Present then it should be used (SignedAttrs contains the eContent digest).
                 // Note: not sure how it works with rsa pss...
@@ -264,7 +269,7 @@ namespace ePassport
 
                 foreach (CertificateChoices certChoice in signedData.Certificates.Value)
                 {
-                    if (Utils.Compare(certChoice.Certificate.TbsCertificate.SerialNumber.Value.ToByteArray(), certificateSerialNumber.ToByteArray()) == true)
+                    if (Utils.Compare(certChoice.Certificate.TbsCertificate.SerialNumber.Value.ToByteArray(), certificateSerialNumber.ToByteArray()) == true || certificateSerialNumber == 0)
                     {
                         bool isSignatureVerifiedSuccessfully = VerifyDigestSignature(
                             certChoice.Certificate.TbsCertificate.SubjectPublicKeyInfo,
@@ -274,7 +279,6 @@ namespace ePassport
                             );
 
                         certificate = certChoice.Certificate;
-
                         return isSignatureVerifiedSuccessfully;
                     }
                 }
