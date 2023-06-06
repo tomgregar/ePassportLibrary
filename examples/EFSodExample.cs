@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using ePassport;
 using System.Linq;
+using System.Security.Cryptography;
 
 
 namespace examples
@@ -66,17 +67,19 @@ namespace examples
                         if (CryptoUtils.VerifySignedData(efSod.Value.Sod.SignedData, out Certificate cert) == true)
                         {
                             displayCertInfo(cert);
+                            int j = 1;
                             foreach (var certEntry in certs)
                             {
                                 CertificateExample.Decode(Utils.DerEncodeAsByteArray<Certificate>(cert));
                                 CertificateExample.Encode(Utils.DerEncodeAsByteArray<Certificate>(cert));
 
-                                byte[] signature = cert.Signature.Value;
+                                byte[] signature = cert.Signature.Value; 
                                 var algorithm = cert.SignatureAlgorithm.Algorithm.Value;
-                                byte[] dataToHash = Utils.DerEncodeAsByteArray<TBSCertificate>(cert.TbsCertificate);
-                                var digestToVerify = CryptoUtils.ComputeHash(algorithm, dataToHash);
-                                var i = CryptoUtils.VerifyDigestSignature(certEntry, digestToVerify, digestAlgorithmOid, signature);
+                                byte[] certificate = Utils.DerEncodeAsByteArray<TBSCertificate>(cert.TbsCertificate);
 
+                                Console.WriteLine(j);
+                                var i = CryptoUtils.VerifySignature(certEntry, certificate, cert.SignatureAlgorithm, signature);
+                                j++;
                                 if (i)
                                 {
                                     Console.WriteLine("WTF");

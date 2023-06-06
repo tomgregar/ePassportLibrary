@@ -14,6 +14,10 @@ namespace ePassport
     using Org.BouncyCastle.Crypto.Signers;
     using Org.BouncyCastle.Crypto;
     using Org.BouncyCastle.Security;
+    using Org.BouncyCastle.Crypto.Tls;
+    using Org.BouncyCastle.Asn1;
+    using Org.BouncyCastle.Asn1.TeleTrust;
+    using Org.BouncyCastle.Asn1.X9;
 
     public static class CryptoUtils
     {
@@ -108,6 +112,126 @@ namespace ePassport
                     hashAlgo.Dispose();
                 }
             }            
+        }
+
+        public static bool VerifySignature(SubjectPublicKeyInfo subjectPublicKeyInfo, byte[] dataForSignature, AlgorithmIdentifier signatureAlgorithm, byte[] signatureToVerify)
+        {
+            bool result = false;
+
+            KnownOids publicKeyOidEnum = Oids.ParseKnown(subjectPublicKeyInfo.Algorithm.Algorithm.Value);
+            KnownOids AlgorithmOidEnum = Oids.ParseKnown(signatureAlgorithm.Algorithm.Value);
+            switch (publicKeyOidEnum)
+            {
+                case KnownOids.rsaEncryption:
+                    {
+                        if (AlgorithmOidEnum == KnownOids.ecdsa_with_sha1 || AlgorithmOidEnum == KnownOids.ecdsa_with_sha256 || AlgorithmOidEnum == KnownOids.ecdsa_with_sha384 || AlgorithmOidEnum == KnownOids.ecdsa_with_sha512)
+                        {
+                            //incompatible public keys
+                            return false;
+                        }
+                        RSAPublicKey rsaPublicKey = Utils.DerDecode<RSAPublicKey>(subjectPublicKeyInfo.SubjectPublicKey.Value);
+
+                        byte[] modulus = rsaPublicKey.Modulus.ToMicrosoftBigEndianByteArray();
+                        byte[] exponent = rsaPublicKey.PublicExponent.ToMicrosoftBigEndianByteArray();
+
+                        //Create a new instance of RSACryptoServiceProvider.
+                        using (RSACryptoServiceProvider RSA = new RSACryptoServiceProvider(modulus.Length * 8))
+                        {
+                            //Create a new instance of RSAParameters.
+                            RSAParameters RSAKeyInfo = new RSAParameters();
+
+                            //Set RSAKeyInfo to the public key values.                             
+                            RSAKeyInfo.Modulus = modulus;
+                            RSAKeyInfo.Exponent = exponent;
+
+                            //Import key parameters into RSA.
+                            RSA.ImportParameters(RSAKeyInfo);
+
+                            result = RSA.VerifyData(dataForSignature, signatureAlgorithm.Algorithm.Value, signatureToVerify);
+                        }
+                    }
+                    return result;
+
+
+                case KnownOids.rsassa_pss:
+                    {
+                        if (AlgorithmOidEnum == KnownOids.ecdsa_with_sha1 || AlgorithmOidEnum == KnownOids.ecdsa_with_sha256 || AlgorithmOidEnum == KnownOids.ecdsa_with_sha384 || AlgorithmOidEnum == KnownOids.ecdsa_with_sha512)
+                        {
+                            //incompatible public keys
+                            return false;
+                        }
+                        RSAPublicKey rsaPublicKey = Utils.DerDecode<RSAPublicKey>(subjectPublicKeyInfo.SubjectPublicKey.Value);
+
+                        int saltLength = 20;
+                        IDigest digestAlgo = new Sha1Digest();
+
+                        if (signatureAlgorithm.isParametersPresent())
+                        {
+                            RSASSA_PSS_params rsassa_pss_params = Utils.DerDecode<RSASSA_PSS_params>(signatureAlgorithm.Parameters);
+                            digestAlgo = GetBouncyCastleHashAlgoInstanceFromOid(rsassa_pss_params.HashAlgorithm.Value.Algorithm.Value);
+                            saltLength = (int)rsassa_pss_params.SaltLength;
+                        }
+
+                        RsaKeyParameters publickey = new RsaKeyParameters(
+                            false,
+                            rsaPublicKey.Modulus.ToBouncyCastleBigInteger(),
+                            rsaPublicKey.PublicExponent.ToBouncyCastleBigInteger()
+                            );
+
+                        //todo
+
+                        PssSigner eng = new PssSigner(new RsaEngine(), digestAlgo, saltLength); //create new pss
+
+                        eng.Init(false, publickey); //initiate this one
+
+                        eng.BlockUpdate(dataForSignature, 0, dataForSignature.Length);
+
+                        result = eng.VerifySignature(signatureToVerify);
+
+                    }
+                    return result;
+
+
+                case KnownOids.ecPublicKey:
+                    {
+                        if (!(AlgorithmOidEnum == KnownOids.ecdsa_with_sha1 || AlgorithmOidEnum == KnownOids.ecdsa_with_sha256 || AlgorithmOidEnum == KnownOids.ecdsa_with_sha384 || AlgorithmOidEnum == KnownOids.ecdsa_with_sha512))
+                        {
+                            //incompatible public keys
+                            return false;
+                        }
+                        // in case of ecdsa, the signature is a sequence of r and s that needs to be concatenated
+                        ECDSA_Sig_Value ecdsaSignature = Utils.DerDecode<ECDSA_Sig_Value>(signatureToVerify);
+
+                        byte[] subjectPublicKeyInfoData = Utils.DerEncodeAsByteArray<SubjectPublicKeyInfo>(subjectPublicKeyInfo);
+                        Org.BouncyCastle.Asn1.Asn1Sequence asn1Sequence = (Org.BouncyCastle.Asn1.Asn1Sequence)Org.BouncyCastle.Asn1.Asn1Sequence.FromByteArray(subjectPublicKeyInfoData);
+                        Org.BouncyCastle.Asn1.X509.SubjectPublicKeyInfo x509SubjectPublicKeyInfo = Org.BouncyCastle.Asn1.X509.SubjectPublicKeyInfo.GetInstance(asn1Sequence);
+
+                        AsymmetricKeyParameter publicKeyParam = PublicKeyFactory.CreateKey(x509SubjectPublicKeyInfo);
+
+                        // Create the ECDSA signer
+                        ISigner signer = SignerUtilities.GetSigner(GetAlgorithmFromSignatureAlgorithm(AlgorithmOidEnum));
+                        signer.Init(false, publicKeyParam);
+                        signer.BlockUpdate(dataForSignature, 0, dataForSignature.Length);
+                        result = signer.VerifySignature(signatureToVerify);
+                    }
+                    return result;
+                default:
+                    throw new NotImplementedException("Signature Algorithm : " + AlgorithmOidEnum + "(" + subjectPublicKeyInfo.Algorithm.Algorithm.Value + ") not yet implemented");
+            }
+        }
+
+        private static string GetAlgorithmFromSignatureAlgorithm(KnownOids algorithmOidEnum)
+        {
+            switch (algorithmOidEnum)
+            {
+                case KnownOids.ecdsa_with_sha1: return "SHA-1withECDSA";
+                case KnownOids.ecdsa_with_sha256: return "SHA-256withECDSA";
+                case KnownOids.ecdsa_with_sha384: return "SHA-384withECDSA";
+                case KnownOids.ecdsa_with_sha512: return "SHA-512withECDSA";
+                //there is also sha 224 we dont use in epassportlibrary now
+                //there is also NONE we dont use in epassportlibrary now
+            }
+            throw new NotImplementedException();
         }
 
         public static bool VerifyDigestSignature(SubjectPublicKeyInfo subjectPublicKeyInfo, byte[] digestToVerify, string digestAlgorithmOid, byte[] signatureToVerify)
