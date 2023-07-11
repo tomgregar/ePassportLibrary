@@ -44,6 +44,9 @@ namespace ePassport
         [Description("2.5.4.20")]
         telephoneNumber,
 
+        [Description("2.5.4.97")]
+        organizationIdentifier,
+
         [Description("2.5.29.14")]
         subjectKeyIdentifier,
 

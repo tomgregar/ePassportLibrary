@@ -18,6 +18,15 @@ namespace ePassport
     using Org.BouncyCastle.Asn1;
     using Org.BouncyCastle.Asn1.TeleTrust;
     using Org.BouncyCastle.Asn1.X9;
+    using Org.BouncyCastle.Asn1.Esf;
+    using Org.BouncyCastle.Asn1.Ocsp;
+    using Org.BouncyCastle.Cms;
+    using Org.BouncyCastle.X509;
+    using Org.BouncyCastle.X509;
+    using Org.BouncyCastle.Security;
+    using Org.BouncyCastle.Crypto;
+    using System.Linq;
+    using System.Runtime.ConstrainedExecution;
 
     public static class CryptoUtils
     {
@@ -67,9 +76,21 @@ namespace ePassport
                 case KnownOids.sha512:
                     return new Sha512Digest();
 
-
                 default:
                     throw new NotImplementedException("hash algorithm : " + algorithmOidEnum + "(" + algorithmOid + ") not yet implemented");
+            }
+        }
+
+        private static IDigest GetBouncyCastleHashAlgoInstanceFromLength(int length)
+        {
+            GeneralDigest digestAlgo = new Sha1Digest();
+
+            switch (length)
+            {
+                case 512: return new Sha512Digest();
+                case 384: return new Sha384Digest();
+                case 256: return new Sha256Digest();
+                default: return new Sha1Digest();               
             }
         }
 
@@ -234,17 +255,49 @@ namespace ePassport
             throw new NotImplementedException();
         }
 
-        public static bool VerifyDigestSignature(SubjectPublicKeyInfo subjectPublicKeyInfo, byte[] digestToVerify, string digestAlgorithmOid, byte[] signatureToVerify)
+        public static bool VerifySignatureV2(SubjectPublicKeyInfo subjectPublicKeyInfo, byte[] signatureSourceBytes, string signatureAlgorithmOid, byte[] signatureToVerify)
         {
             bool result = false;
-
-            KnownOids algorithmOidEnum = Oids.ParseKnown(subjectPublicKeyInfo.Algorithm.Algorithm.Value);            
-
-            switch (algorithmOidEnum)
+            bool isSignatureVerifiedSuccessfully = VerifyDigestSignature(
+                            subjectPublicKeyInfo,
+                            null,
+                            null,
+                            signatureSourceBytes,
+                            signatureToVerify,
+                            signatureAlgorithmOid
+                            );
+            return isSignatureVerifiedSuccessfully;
+        }
+        public static bool VerifyDigestSignature(SubjectPublicKeyInfo subjectPublicKeyInfo, byte[] digestToVerify, string digestAlgorithmOid, byte[] signatureSourceBytes, byte[] signatureToVerify, string signatureAlgorithmOid)
+        {
+            bool result = false;
+            KnownOids publicKeyAlgorithmOidEnum = Oids.ParseKnown(subjectPublicKeyInfo.Algorithm.Algorithm.Value);
+            KnownOids signatureOidEnum = Oids.ParseKnown(signatureAlgorithmOid);
+            if (digestToVerify == null && (publicKeyAlgorithmOidEnum == KnownOids.rsaEncryption || publicKeyAlgorithmOidEnum == KnownOids.rsassa_pss))
             {
+                if (signatureOidEnum == KnownOids.ecdsa_with_sha1 || signatureOidEnum == KnownOids.ecdsa_with_sha256 || signatureOidEnum == KnownOids.ecdsa_with_sha384 || signatureOidEnum == KnownOids.ecdsa_with_sha512)
+                {
+                    //incompatible public keys
+                    return false;
+                }
+            }
+            if (digestToVerify == null && publicKeyAlgorithmOidEnum == KnownOids.ecPublicKey)
+            {
+                if (!(signatureOidEnum == KnownOids.ecdsa_with_sha1 || signatureOidEnum == KnownOids.ecdsa_with_sha256 || signatureOidEnum == KnownOids.ecdsa_with_sha384 || signatureOidEnum == KnownOids.ecdsa_with_sha512))
+                {
+                    //incompatible public keys
+                    return false;
+                }
+            }
+            if (signatureOidEnum == KnownOids.rsassa_pss)
+            {
+                publicKeyAlgorithmOidEnum = signatureOidEnum;
+            }
 
+            switch (publicKeyAlgorithmOidEnum)
+            {
                 case KnownOids.rsaEncryption:
-                    {
+                    {                        
                         RSAPublicKey rsaPublicKey = Utils.DerDecode<RSAPublicKey>(subjectPublicKeyInfo.SubjectPublicKey.Value);
 
                         byte[] modulus = rsaPublicKey.Modulus.ToMicrosoftBigEndianByteArray();
@@ -263,9 +316,15 @@ namespace ePassport
                             //Import key parameters into RSA.
                             RSA.ImportParameters(RSAKeyInfo);
 
-                            if (digestToVerify.Length == GetHashAlgoOutputSizeFromOid(digestAlgorithmOid))
+                            if (digestToVerify != null)
                             {
-                                result = RSA.VerifyHash(digestToVerify, digestAlgorithmOid, signatureToVerify);
+                                if (digestToVerify.Length == GetHashAlgoOutputSizeFromOid(digestAlgorithmOid))
+                                {
+                                    result = RSA.VerifyHash(digestToVerify, digestAlgorithmOid, signatureToVerify);
+                                }
+                            } else
+                            {
+                                result = RSA.VerifyData(signatureSourceBytes, signatureAlgorithmOid, signatureToVerify);
                             }
                         }
                     }
@@ -280,9 +339,22 @@ namespace ePassport
                         IDigest digestAlgo = new Sha1Digest();                        
 
                         if (subjectPublicKeyInfo.Algorithm.isParametersPresent()) {
-                            RSASSA_PSS_params rsassa_pss_params = Utils.DerDecode<RSASSA_PSS_params>(subjectPublicKeyInfo.Algorithm.Parameters);
-                            digestAlgo = GetBouncyCastleHashAlgoInstanceFromOid(rsassa_pss_params.HashAlgorithm.Value.Algorithm.Value);
-                            saltLength = (int)rsassa_pss_params.SaltLength;
+                            try
+                            {
+                                RSASSA_PSS_params rsassa_pss_params = Utils.DerDecode<RSASSA_PSS_params>(subjectPublicKeyInfo.Algorithm.Parameters);
+                                digestAlgo = GetBouncyCastleHashAlgoInstanceFromOid(rsassa_pss_params.HashAlgorithm.Value.Algorithm.Value);
+                                saltLength = (int)rsassa_pss_params.SaltLength;
+                            } catch(Exception e)
+                            {
+                                if (digestAlgorithmOid == null)
+                                {
+                                    digestAlgo = GetBouncyCastleHashAlgoInstanceFromLength(signatureToVerify.Length);
+                                } else
+                                {
+                                    digestAlgo = GetBouncyCastleHashAlgoInstanceFromOid(digestAlgorithmOid);
+                                }
+                                
+                            }
                         }
 
                         RsaKeyParameters publickey = new RsaKeyParameters(
@@ -291,13 +363,25 @@ namespace ePassport
                             rsaPublicKey.PublicExponent.ToBouncyCastleBigInteger()
                             );
 
-                        PssSigner eng = new PssSigner(new RsaEngine(), digestAlgo, saltLength); //create new pss
-
+                        ISigner eng;
+                        if (digestAlgorithmOid == null)
+                        {
+                            eng = SignerUtilities.GetSigner("SHA384withRSAandMGF1");
+                        }
+                        else
+                        {
+                            eng = new PssSigner(new RsaEngine(), digestAlgo); //create new pss
+                        }
+                        // Create an RSA signer with the RSASSA-PSS algorithm
                         eng.Init(false, publickey); //initiate this one
-
-                        eng.BlockUpdate(digestToVerify, 0, digestToVerify.Length);
-
-                        result = eng.VerifySignature(signatureToVerify);
+                        eng.BlockUpdate(signatureSourceBytes, 0, signatureSourceBytes.Length);
+                        try
+                        {
+                            result = eng.VerifySignature(signatureToVerify);
+                        } catch(Exception e)
+                        {
+                            result = false;
+                        }
 
                     }
                     return result;
@@ -314,24 +398,66 @@ namespace ePassport
 
                         AsymmetricKeyParameter publicKeyParam = PublicKeyFactory.CreateKey(x509SubjectPublicKeyInfo);
 
-                        ECDsaSigner ecdsa = new ECDsaSigner();
-
-                        ecdsa.Init(false, publicKeyParam);
-
-                        result = ecdsa.VerifySignature(
-                            digestToVerify,
-                            ecdsaSignature.R.ToBouncyCastleBigInteger(),
-                            ecdsaSignature.S.ToBouncyCastleBigInteger()
-                        );                        
-
+                        if (digestToVerify != null)
+                        {
+                            ECDsaSigner ecdsa = new ECDsaSigner();
+                            ecdsa.Init(false, publicKeyParam);
+                            result = ecdsa.VerifySignature(
+                                digestToVerify,
+                                ecdsaSignature.R.ToBouncyCastleBigInteger(),
+                                ecdsaSignature.S.ToBouncyCastleBigInteger()
+                            );
+                        }
+                        else
+                        {
+                            // Create the ECDSA signer
+                            ISigner signer = SignerUtilities.GetSigner(GetAlgorithmFromSignatureAlgorithm(signatureOidEnum));
+                            signer.Init(false, publicKeyParam);
+                            signer.BlockUpdate(signatureSourceBytes, 0, signatureSourceBytes.Length);
+                            result = signer.VerifySignature(signatureToVerify);
+                        }
                     }
                     return result;
 
                 default:
-                    throw new NotImplementedException("Signature Algorithm : " + algorithmOidEnum + "(" + subjectPublicKeyInfo.Algorithm.Algorithm.Value + ") not yet implemented");
+                    throw new NotImplementedException("Signature Algorithm : " + publicKeyAlgorithmOidEnum + "(" + subjectPublicKeyInfo.Algorithm.Algorithm.Value + ") not yet implemented");
             }
         }
 
+        public static byte[] HashWithAlgorithm(string oid, byte[] input)
+        {
+            try
+            {
+                // Compute the hash of the input data
+                byte[] hashedData = ComputeHash(oid, input);
+
+                return hashedData;
+            }
+            catch (CryptographicException ex)
+            {
+                // Handle any exceptions that may occur during hashing
+                Console.WriteLine("Error occurred during hashing: " + ex.Message);
+                return null;
+            }
+        }
+
+        public static bool CheckSignature(byte[] tbscertificate, byte[] publicKeyBytes)
+        {
+            try
+            {
+                X509CertificateParser certParser = new X509CertificateParser();
+                X509Certificate cert = certParser.ReadCertificate(tbscertificate);
+
+                // Load the public key
+                AsymmetricKeyParameter pubKey = PublicKeyFactory.CreateKey(publicKeyBytes);
+                // Verify the certificate
+                cert.Verify(pubKey);
+                return true;
+            } catch (Exception ex)
+            {
+                return false;
+            }
+        }
         public static bool VerifySignedData(SignedData signedData)
         {
             Certificate certificate = null;
@@ -345,6 +471,7 @@ namespace ePassport
             foreach (SignerInfo signerInfo in signedData.SignerInfos.Value)
             {
                 byte[] digestToVerify = null;
+                byte[] signatureSourceBytes = null;
 
                 byte[] signature = signerInfo.Signature.Value;
                 
@@ -353,23 +480,18 @@ namespace ePassport
                 string signatureAlgorithmOid = signerInfo.SignatureAlgorithm.Value.Algorithm.Value;
 
                 KnownOids signatureOidEnum = Oids.ParseKnown(signatureAlgorithmOid);
-                
-                switch (signatureOidEnum)
-                {
-                    case KnownOids.rsassa_pss:
-                        // in case of rsa ssa pss, the digest is computed along with the verification
-                        digestToVerify = signedData.EncapContentInfo.EContent;
-                        break;
+                KnownOids digestOidEnum = Oids.ParseKnown(digestAlgorithmOid);
 
-                    default:
-                        digestToVerify = ComputeHash(digestAlgorithmOid, signedData.EncapContentInfo.EContent);
-                        break;
+                //default values, if not signet atrs
+                digestToVerify = ComputeHash(digestAlgorithmOid, signedData.EncapContentInfo.EContent);
+                if (signatureOidEnum == KnownOids.rsassa_pss)
+                {
+                    signatureSourceBytes = digestToVerify;
                 }
 
                 BigInteger certificateSerialNumber = signerInfo.Sid.IssuerAndSerialNumber?.SerialNumber.Value ?? 0;
 
                 // if SignedAttrs is Present then it should be used (SignedAttrs contains the eContent digest).
-                // Note: not sure how it works with rsa pss...
                 if (signerInfo.isSignedAttrsPresent())
                 {
                     foreach (ePassport.Attribute attribute in signerInfo.SignedAttrs.Value)
@@ -377,12 +499,16 @@ namespace ePassport
                         if (Oids.ParseKnown(attribute.Type.Value.Value) == KnownOids.messageDigest)
                         {
                             byte[] digest = ((List<byte[]>)attribute.Values)[0];
-
+                            var test = Utils.Compare(digestToVerify, 0, digest, digest.Length - digestToVerify.Length, digestToVerify.Length);
                             // verify that econtent digest is matching
-                            if (Utils.Compare(digestToVerify, 0, digest, digest.Length - digestToVerify.Length, digestToVerify.Length) == true)
+                            if (test == true)
                             {
                                 // since it is matching, let's use the SignedAttrs as input for the digest
                                 byte[] dataToHash = Utils.DerEncodeAsByteArray<SignedAttributes>(signerInfo.SignedAttrs);
+                                if (signatureOidEnum == KnownOids.rsassa_pss)
+                                {
+                                    signatureSourceBytes = dataToHash;
+                                }
                                 digestToVerify = ComputeHash(digestAlgorithmOid, dataToHash);
                                 break;
                             }
@@ -399,9 +525,10 @@ namespace ePassport
                             certChoice.Certificate.TbsCertificate.SubjectPublicKeyInfo,
                             digestToVerify,
                             digestAlgorithmOid,
-                            signature
+                            signatureSourceBytes,
+                            signature,
+                            signatureAlgorithmOid
                             );
-
                         certificate = certChoice.Certificate;
                         return isSignatureVerifiedSuccessfully;
                     }
@@ -432,8 +559,36 @@ namespace ePassport
                 dataList.RemoveAt(0);
             }            
             return dataList.ToArray();
-        }        
+        }
 
-#endregion
+        public static IEnumerable<string> GeRevokedSerialNumbersFromCrl(byte[] crlData, List<ePassport.SubjectPublicKeyInfo> certs)
+        {
+            // Parse the CRL.
+            X509CrlParser crlParser = new X509CrlParser();
+            X509Crl crl = crlParser.ReadCrl(crlData);
+            bool failed = true;
+            foreach (var certEntry in certs)
+            {
+                try
+                {
+                    byte[] certEntryBytes = Utils.DerEncodeAsByteArray<SubjectPublicKeyInfo>(certEntry);
+                    AsymmetricKeyParameter pubKey = PublicKeyFactory.CreateKey(certEntryBytes);
+                    crl.Verify(pubKey);
+                    failed = false;
+                } catch (Exception ex)
+                {
+
+                }
+            }
+            if (failed) return new List<string>();
+            // Get the serial numbers of all revoked certificates.
+            var revokedSerialNumbers = crl.GetRevokedCertificates()
+                ?.Cast<X509CrlEntry>();
+            if (revokedSerialNumbers == null) return new List<string>();
+            var numbers = revokedSerialNumbers.Select(entry => entry.SerialNumber);
+            return numbers.Select(x=>x.ToString());
+        }
+
+        #endregion
     }
 }

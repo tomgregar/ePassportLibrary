@@ -20,7 +20,7 @@ namespace examples
             }
         }
 
-        public static void Parse(string filename, List<SubjectPublicKeyInfo> certs)
+        public static bool Parse(string filename, List<SubjectPublicKeyInfo> certs, List<string> toIgnore)
         {
             Console.WriteLine("Parsing Document Security Object (EF.SOD): {0}", filename);
 
@@ -58,38 +58,44 @@ namespace examples
 
                     try
                     {
-                        if (CryptoUtils.VerifySignedData(efSod.Value.Sod.SignedData) == true)
-                        {
-                            Console.WriteLine("\tpassport content-digest signature is consistent");
-                            //return;
-                        }
-
+                        bool isOk = false;
                         if (CryptoUtils.VerifySignedData(efSod.Value.Sod.SignedData, out Certificate cert) == true)
                         {
+                            Console.WriteLine("\tpassport content-digest signature is consistent");
                             displayCertInfo(cert);
                             int j = 1;
                             foreach (var certEntry in certs)
                             {
-                                CertificateExample.Decode(Utils.DerEncodeAsByteArray<Certificate>(cert));
-                                CertificateExample.Encode(Utils.DerEncodeAsByteArray<Certificate>(cert));
+                                //CertificateExample.Decode(Utils.DerEncodeAsByteArray<Certificate>(cert));
+                                //CertificateExample.Encode(Utils.DerEncodeAsByteArray<Certificate>(cert));
 
-                                byte[] signature = cert.Signature.Value; 
-                                var algorithm = cert.SignatureAlgorithm.Algorithm.Value;
-                                byte[] certificate = Utils.DerEncodeAsByteArray<TBSCertificate>(cert.TbsCertificate);
+                                byte[] signature = cert.Signature.Value;
+                                var signatureAlgorithm = cert.SignatureAlgorithm.Algorithm.Value;
+                                byte[] tbscertificate = Utils.DerEncodeAsByteArray<Certificate>(cert);
+                                byte[] certEntryBytes = Utils.DerEncodeAsByteArray<SubjectPublicKeyInfo>(certEntry);
 
                                 Console.WriteLine(j);
-                                var i = CryptoUtils.VerifySignature(certEntry, certificate, cert.SignatureAlgorithm, signature);
+                                Console.WriteLine(certEntry.Algorithm.Algorithm.Value);
+
+                                //var i = CryptoUtils.VerifySignatureV2(certEntry, tbscertificate, signatureAlgorithm, signature);
+                                var i = CryptoUtils.CheckSignature(tbscertificate, certEntryBytes);
+                                Console.WriteLine(i);
                                 j++;
+
                                 if (i)
                                 {
-                                    Console.WriteLine("WTF");
-                                }                                
+                                    Console.WriteLine("!!!!!!!!!!!!!!!!!!!!!!!WTF!!!!!!!!!!!!!!!!!!!!!!");
+                                    isOk = true;
+                                }
 
                                 //if (certEntry.SubjectPublicKey == cert.Signature)
                             }
-                            //if (certs.OrderBy(c=>c).ToList().Contains(cert.TbsCertificate.SerialNumber.Value.ToString()))
-                            Console.WriteLine("\tA");
-                            return;
+
+                            if (toIgnore.Contains(cert.TbsCertificate.SerialNumber.Value.ToString()))
+                            {
+                                isOk = false;
+                            }
+                            return isOk;
                         }
 
                         Console.WriteLine("\tERROR : passport content-digest signature verification failed");
@@ -103,7 +109,7 @@ namespace examples
                 {
                     Console.WriteLine("\tERROR : LDS Security object not found !");
                 }
-
+                return false;
             }            
         }
     }
