@@ -30,7 +30,7 @@ namespace ePassport
 
     public static class CryptoUtils
     {
-        private static int GetHashAlgoOutputSizeFromOid(string algorithmOid)
+        public static int GetHashAlgoOutputSizeFromOid(string algorithmOid)
         {
             KnownOids algorithmOidEnum = Oids.ParseKnown(algorithmOid);
 
