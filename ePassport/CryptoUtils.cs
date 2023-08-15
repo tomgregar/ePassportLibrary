@@ -561,7 +561,7 @@ namespace ePassport
             return dataList.ToArray();
         }
 
-        public static IEnumerable<string> GeRevokedSerialNumbersFromCrl(byte[] crlData, List<ePassport.SubjectPublicKeyInfo> certs)
+        public static IEnumerable<string> GeRevokedSerialNumbersFromCrl(byte[] crlData, List<ePassport.SubjectPublicKeyInfo> certs, bool debug = false)
         {
             // Parse the CRL.
             X509CrlParser crlParser = new X509CrlParser();
@@ -578,7 +578,7 @@ namespace ePassport
                     AsymmetricKeyParameter pubKey = PublicKeyFactory.CreateKey(certEntryBytes);
                     crl.Verify(pubKey);             
                     failed= false;
-                    Console.WriteLine($"Key {now}/{count} valid according to CRL.");
+                    if (debug) Console.WriteLine($"Key {now}/{count} valid according to CRL.");
                     break;
                 } catch (Exception ex)
                 {
@@ -590,7 +590,7 @@ namespace ePassport
             if (revokedSerialNumbers == null) return new List<string>();
             if (failed)
             {
-                Console.WriteLine("Verification failed, but revoked serials exists!");
+                if (debug) Console.WriteLine("Verification error, but revoked serials exists!");
             }
             var numbers = revokedSerialNumbers.Select(entry => entry.SerialNumber);
             return numbers.Select(x=>x.ToString());
