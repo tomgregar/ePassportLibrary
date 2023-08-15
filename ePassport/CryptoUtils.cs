@@ -567,24 +567,31 @@ namespace ePassport
             X509CrlParser crlParser = new X509CrlParser();
             X509Crl crl = crlParser.ReadCrl(crlData);
             bool failed = true;
+            int count = certs.Count;
+            int now = 0;
             foreach (var certEntry in certs)
             {
+                now++;
                 try
                 {
                     byte[] certEntryBytes = Utils.DerEncodeAsByteArray<SubjectPublicKeyInfo>(certEntry);
                     AsymmetricKeyParameter pubKey = PublicKeyFactory.CreateKey(certEntryBytes);
-                    crl.Verify(pubKey);
-                    failed = false;
+                    crl.Verify(pubKey);             
+                    failed= false;
+                    Console.WriteLine($"Key {now}/{count} valid according to CRL.");
+                    break;
                 } catch (Exception ex)
                 {
-
                 }
             }
-            if (failed) return new List<string>();
             // Get the serial numbers of all revoked certificates.
             var revokedSerialNumbers = crl.GetRevokedCertificates()
                 ?.Cast<X509CrlEntry>();
             if (revokedSerialNumbers == null) return new List<string>();
+            if (failed)
+            {
+                Console.WriteLine("Verification failed, but revoked serials exists!");
+            }
             var numbers = revokedSerialNumbers.Select(entry => entry.SerialNumber);
             return numbers.Select(x=>x.ToString());
         }

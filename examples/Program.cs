@@ -20,13 +20,15 @@ namespace examples
 
             // example of parsing of the ICAO masterlist
             // see https://www.icao.int/Security/FAL/PKD/Pages/icao-master-list.aspx to obtain the file
+            //List<ePassport.SubjectPublicKeyInfo> certs = ICAOMasterListExample.Parse("20230524_DEMasterList.ml").ToList(); //
+
             List<ePassport.SubjectPublicKeyInfo> certs = ICAOMasterListExample.ParseUrlAsync(new List<string> {
-                /*"https://www.mvcr.cz/soubor/cze-csca-20210323-cer.aspx","https://www.mvcr.cz/soubor/cze-eid-csca-20180618-cer.aspx","https://www.mvcr.cz/soubor/cze-eid-csca-test-20180518-cer.aspx","https://www.mvcr.cz/soubor/cze-csca-20160324-cer.aspx","https://www.mvcr.cz/soubor/cze-csca-test-20060720-cer.aspx","https://www.mvcr.cz/soubor/cze-csca-20110325-cer.aspx","https://www.mvcr.cz/soubor/cze-csca-20090113-der.aspx","https://www.mvcr.cz/soubor/cze-csca-20110325-cer.aspx",*/ "https://www.eid.hr/datastore/filestore/10/akdcaroot.crt"
+                "https://www.mvcr.cz/soubor/cze-csca-20210323-cer.aspx","https://www.mvcr.cz/soubor/cze-eid-csca-20180618-cer.aspx","https://www.mvcr.cz/soubor/cze-eid-csca-test-20180518-cer.aspx","https://www.mvcr.cz/soubor/cze-csca-20160324-cer.aspx","https://www.mvcr.cz/soubor/cze-csca-test-20060720-cer.aspx","https://www.mvcr.cz/soubor/cze-csca-20110325-cer.aspx","https://www.mvcr.cz/soubor/cze-csca-20090113-der.aspx","https://www.mvcr.cz/soubor/cze-csca-20110325-cer.aspx", "https://www.eid.hr/datastore/filestore/10/akdcaroot.crt", "https://www.eid.hr/datastore/file/16/hridca.crt"
 
-            }).ToList(); //"20230524_DEMasterList.ml"
+            }).ToList();
 
-            List<string> ignore = ICAOMasterListExample.ParseLDIFUrlAsync(new List<string> { "https://www.mvcr.cz/soubor/cze-eid-csca-crl-crl.aspx", "https://www.mvcr.cz/soubor/cze-eid-csca-crl-test-crl.aspx", "https://www.mvcr.cz/soubor/cze-csca-crl-crl.aspx", "https://www.mvcr.cz/soubor/cze-csca-crl-test-crl.aspx", "http://crl1.eid.hr/hridca.crl" }, certs).ToList();
-
+            List<string> ignore = ICAOMasterListExample.ParseLDIFUrlAsync(new List<string> { "https://www.mvcr.cz/soubor/cze-eid-csca-crl-crl.aspx", "https://www.mvcr.cz/soubor/cze-eid-csca-crl-test-crl.aspx", "https://www.mvcr.cz/soubor/cze-csca-crl-crl.aspx", "https://www.mvcr.cz/soubor/cze-csca-crl-test-crl.aspx",  "http://crl1.eid.hr/hridca.crl" }, certs).ToList();
+            //List<string> ignore = ICAOMasterListExample.ParseLDIF("icaopkd-001-dsccrl-006699.ldif", certs).ToList();
             //"icaopkd-001-dsccrl-006699.ldif"
 
             try
